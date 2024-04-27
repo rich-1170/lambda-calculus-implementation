@@ -7,6 +7,51 @@
 ;;; Based on the definition of the lambda-calculus in chapter 1 of
 ;;; "Lambda-calculus and combinators: an introduction" by Hindley and Seldin.
 
+
+;;; Representation of lambda terms
+
+(define-record-type <atom>
+  (make-atom symbol)
+  atom?
+  (symbol atom-symbol))
+
+(define-record-type <application>
+  (make-application function argument)
+  application?
+  (function application-function)
+  (argument application-argument))
+
+(define-record-type <abstraction>
+  (make-abstraction binding-variable body)
+  abstraction?
+  (binding-variable abstraction-binding-variable)
+  (body abstraction-body))
+
+(define (term? x)
+  (or (atom? x) (application? x) (abstraction? x)))
+
+;; Converts s-expression notation for lambda terms into
+;; the internal representation of lambda terms.
+(define (s-expression->term x)
+  (define (looks-like-an-atom x) (symbol? x))
+  (define (looks-like-an-application x)
+    (and (list? x)
+         (= (length x) 2)
+         (
+  (cond ((symbol? x) (make-atom x))
+        ((
+
+
+
+
+
+
+
+
+
+
+
+
 (define (lambda:atom? x)
   ;; 'lambda is a reserved word in this implementation.
   (and (symbol? x)
