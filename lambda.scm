@@ -25,6 +25,19 @@
 (define (abstraction-binding-variable x) (cadr x))
 (define (abstraction-body x) (caddr x))
 
+(define (make-nested-abstractions binding-variables body)
+  (if (null? binding-variables)
+      body
+      (make-abstraction (car binding-variables)
+                        (make-nested-abstractions (cdr binding-variables) body))))
+
+(define (make-nested-applications function arguments)
+  (if (null? arguments) ; if not actually an application, just a term
+      function
+      (make-nested-applications (make-application function
+                                                  (car arguments))
+                                (cdr arguments))))
+
 (define (term? x)
   (or (atom? x) (application? x) (abstraction? x)))
 
@@ -42,25 +55,42 @@
 
 (define (parse-application x)
   (if (and (list? x)
-           (equal? (length x) 2))
+           (>= (length x) 2))
       (let ((func (parse-term (car x)))
-            (arg (parse-term (cadr x))))
-        (if (and func arg) ; if parses were successful
-            (make-application func arg)
+            (args (parse-arguments (cdr x))))
+        (if (and func args)
+            (make-nested-applications func args)
             #f))
       #f))
+
+(define (parse-arguments x)
+  (if (null? x)
+      '()
+      (let ((arg (parse-term (car x))))
+        (if arg
+            (cons arg (parse-arguments (cdr x)))
+            #f))))
+
+(define (parse-binding-variables x)
+  (if (null? x)
+      '()
+      (let ((var (parse-atom (car x))))
+        (if var ; if parsed successfully
+            (cons var (parse-binding-variables (cdr x)))
+            #f))))
 
 (define (parse-abstraction x)
   (if (and (list? x)
            (equal? (length x) 3)
            (equal? (car x) 'lambda)
-           (list? (cadr x))
-           (equal? (length (cadr x)) 1))
-      (let ((var (parse-atom (caadr x)))
+           (list? (cadr x)))
+      (let ((vars (parse-binding-variables (cadr x)))
             (body (parse-term (caddr x))))
-        (if (and var body) ; if parses were successful
-            (make-abstraction var body)
-            #f))))
+        (if (and vars body) ; if parses were successful
+            (make-nested-abstractions vars body)
+            #f))
+      #f))
+          
 
 (define (parse-term x)
   ;; "or" returns the first non-false value
@@ -199,18 +229,9 @@
                            (reduce-to-bnf (abstraction-body m))))))
 
 (define ex-1.28-f
-  '((((lambda (x)
-        (lambda (y)
-          (lambda (z)
-            ((x z) (y z)))))
-      ((lambda (x)
-         (lambda (y)
-           (y x)))
-       u))
-     ((lambda (x)
-        (lambda (y)
-          (y x)))
-      v))
+  '((lambda (x y z) (x z (y z)))
+    ((lambda (x y) (y x)) u)
+    ((lambda (x y) (y x)) v)
     w))
 
 
