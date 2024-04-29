@@ -3,6 +3,7 @@
 ;;; Richard Bachmann
 ;;; 2024-04-25
 ;;; 2024-04-27
+;;; 2024-04-29
 ;;;
 ;;; Based on the definition of the lambda-calculus in chapter 1 of
 ;;; "Lambda-calculus and combinators: an introduction" by Hindley and Seldin.
@@ -10,214 +11,192 @@
 
 ;;; Representation of lambda terms
 
-(define-record-type <atom>
-  (make-atom symbol)
-  atom?
-  (symbol atom-symbol))
+(define (make-atom symbol) (list '<atom> symbol))
+(define (atom? x) (equal? (car x) '<atom>))
+(define (atom-symbol x) (cadr x))
 
-(define-record-type <application>
-  (make-application function argument)
-  application?
-  (function application-function)
-  (argument application-argument))
+(define (make-application function argument) (list '<application> function argument))
+(define (application? x) (equal? (car x) '<application>))
+(define (application-function x) (cadr x))
+(define (application-argument x) (caddr x))
 
-(define-record-type <abstraction>
-  (make-abstraction binding-variable body)
-  abstraction?
-  (binding-variable abstraction-binding-variable)
-  (body abstraction-body))
+(define (make-abstraction binding-variable body) (list '<abstraction> binding-variable body))
+(define (abstraction? x) (equal? (car x) '<abstraction>))
+(define (abstraction-binding-variable x) (cadr x))
+(define (abstraction-body x) (caddr x))
 
 (define (term? x)
   (or (atom? x) (application? x) (abstraction? x)))
 
-;; Converts s-expression notation for lambda terms into
-;; the internal representation of lambda terms.
-(define (s-expression->term x)
-  (define (looks-like-an-atom x) (symbol? x))
-  (define (looks-like-an-application x)
-    (and (list? x)
-         (= (length x) 2)
-         (
-  (cond ((symbol? x) (make-atom x))
-        ((
-
-
-
-
-
-
-
-
-
-
-
-
-(define (lambda:atom? x)
-  ;; 'lambda is a reserved word in this implementation.
-  (and (symbol? x)
-       (not (equal? x 'lambda))))
-
-(define (lambda:abstraction? x)
-  ;; Does x have the form '(lambda (<atom>) <term>) ?
-  ;; Note: abstractions involving more than one binding variable are not allowed.
-  (and (list? x)
-       (equal? (length x) 3)
-       (equal? (car x) 'lambda)
-       (list? (cadr x))
-       (equal? (length (cadr x)) 1)
-       (lambda:atom? (caadr x))
-       (lambda:term? (caddr x))))
-
-(define (lambda:abstraction-binding-variable x) (caadr x))
-(define (lambda:abstraction-body x) (caddr x))
-(define lambda:abstraction-scope lambda:abstraction-body)
-(define (lambda:make-abstraction var body)
-  (list 'lambda (list var) body))
-
-(define (lambda:application? x)
-  ;; Does x have the form '(<term> <term>) ?
-  (and (list? x)
-       (equal? (length x) 2)
-       (lambda:term? (car x))
-       (lambda:term? (cadr x))))
-
-(define (lambda:application-function x) (car x))
-(define (lambda:application-argument x) (cadr x))
-
-(define (lambda:make-application p q) (list p q))
-
-(define (lambda:term? x)
-  (or (lambda:atom? x)
-      (lambda:abstraction? x)
-      (lambda:application? x)))
-
-(define (lambda:same? x y)
+(define (identical? x y)
   (equal? x y))
-(define lambda:syntactically-identical? lambda:same?)
 
-(define (lambda:length x)
-  (cond ((lambda:atom? x) 1)
-        ((lambda:application? x)
-         (+ (lambda:length (lambda:application-function x))
-            (lambda:length (lambda:application-argument x))))
-        ((lambda:abstraction? x)
-         (+ 1 (lambda:length (lambda:abstraction-body x))))))
 
-(define (lambda:occurs-in? x m)
-  (or (lambda:same? x m)
-      (and (lambda:application? m)
-           (lambda:occurs-in? x (lambda:application-function m))
-           (lambda:occurs-in? x (lambda:application-argument m)))
-      (and (lambda:abstraction? m)
-           (lambda:same? x (lambda:abstraction-binding-variable m))
-           (lambda:occurs-in x (lambda:abstraction-body m)))))
+;;; Parsing s-expressions into lambda terms
 
-(define (lambda:bound-in? x m)
-  (or (and (lambda:application? m)
-           (or (lambda:bound-in? x (lambda:application-function m))
-               (lambda:bound-in? x (lambda:application-argument m)))
-      (and (lambda:abstraction? m)
-           (lambda:same? x (lambda:abstraction-binding-variable m))
-           (lambda:occurs-in? x (lambda:abstraction-body m)))
-      (and (lambda:abstraction? m)
-           (lambda:bound-in? x (lambda:abstraction-body m))))))
+(define (parse-atom x)
+  (if (and (symbol? x)
+           (not (equal? x 'lambda)))
+      (make-atom x)
+      #f))
 
-(define (lambda:binding-in? x m)
-  (or (and (lambda:application? m)
-           (or (lambda:binding-in? x (lambda:application-function m))
-               (lambda:binding-in? x (lambda:application-argument m))))
-      (and (lambda:abstraction? m)
-           (or (lambda:same? x (lambda:abstraction-binding-variable m))
-               (lambda:binding-in? x (lambda:abstraction-body m))))))
+(define (parse-application x)
+  (if (and (list? x)
+           (equal? (length x) 2))
+      (let ((func (parse-term (car x)))
+            (arg (parse-term (cadr x))))
+        (if (and func arg) ; if parses were successful
+            (make-application func arg)
+            #f))
+      #f))
 
-(define (lambda:free-in? x m)
-  (or (and (lambda:atom? m)
-           (lambda:same? x m))
-      (and (lambda:application? m)
-           (or (lambda:free-in? x (lambda:application-function m))
-               (lambda:free-in? x (lambda:application-argument m))))
-      (and (lambda:abstraction? m)
-           (not (lambda:same? x (lambda:abstraction-binding-variable m)))
-           (lambda:free-in? x (lambda:abstraction-body m)))))
+(define (parse-abstraction x)
+  (if (and (list? x)
+           (equal? (length x) 3)
+           (equal? (car x) 'lambda)
+           (list? (cadr x))
+           (equal? (length (cadr x)) 1))
+      (let ((var (parse-atom (caadr x)))
+            (body (parse-term (caddr x))))
+        (if (and var body) ; if parses were successful
+            (make-abstraction var body)
+            #f))))
 
-;; bound-variables is a list of variables that are bound in abstractions surrounding m.
-;; Provide an empty list if there is nothing surrounding m.
-(define (lambda:free-variables m bound-variables)
-  (cond ((lambda:atom? m)
-         (if (member m bound-variables) '() (list m)))
-        ((lambda:application? m)
-         (append (lambda:free-variables (lambda:application-function m) bound-variables)
-                 (lambda:free-variables (lambda:application-argument m) bound-variables)))
-        ((lambda:abstraction? m)
-         (lambda:free-variables (lambda:abstraction-body m)
-                                (cons (lambda:abstraction-binding-variable m) bound-variables)))))
+(define (parse-term x)
+  ;; "or" returns the first non-false value
+  (or (parse-atom x)
+      (parse-application x)
+      (parse-abstraction x)))
 
-(define (lambda:closed-term? m)
-  (null? (lambda:free-variables m '())))
+
+;;; Unparsing lambda terms into s-expressions
+
+(define (unparse-term x)
+  (cond ((atom? x) (atom-symbol x))
+        ((application? x)
+         (list (unparse-term (application-function x))
+               (unparse-term (application-argument x))))
+        ((abstraction? x)
+         (list 'lambda
+               (list (unparse-term (abstraction-binding-variable x)))
+               (unparse-term (abstraction-body x))))))
+
+
+
+
+(define (num-atoms x)
+  (cond ((atom? x) 1)
+        ((application? x)
+         (+ (num-atoms (application-function x))
+            (num-atoms (application-argument x))))
+        ((abstraction? x)
+         (+ 1 (num-atoms (abstraction-body x))))))
+
+(define (occurs-in? x y)
+  (or (identical? x y)
+      (and (application? y)
+           (or (occurs-in? x (application-function y))
+               (occurs-in? x (application-argument y))))
+      (and (lambda:abstraction? y)
+           (or (identical? x (abstraction-binding-variable y))
+               (occurs-in? x (abstraction-body y))))))
+
+(define (bound-in? x y)
+  (or (and (application? y)
+           (or (bound-in? x (application-function y))
+               (bound-in? x (application-argument y))))
+      (and (lambda:abstraction? y)
+           (or (identical? x (abstraction-binding-variable y))
+               (bound-in? x (abstraction-body y))))))
+
+(define (free-in? x m)
+  (or (and (atom? m)
+           (identical? x m))
+      (and (application? m)
+           (or (free-in? x (application-function m))
+               (free-in? x (application-argument m))))
+      (and (abstraction? m)
+           (not (identical? x (abstraction-binding-variable m)))
+           (free-in? x (abstraction-body m)))))
+
+(define (free-variables m)
+  (define (free m already-bound)
+    (cond ((atom? m)
+           (if (member m already-bound) '() (list m)))
+          ((application? m)
+           (append (free (application-function m) already-bound)
+                   (free (application-argument m) already-bound)))
+          ((abstraction? m)
+           (free (abstraction-body m)
+                 (cons (abstraction-binding-variable m) already-bound)))))
+  (free m '()))
+
+(define (closed-term? m)
+  (null? (free-variables m)))
 
 ;; I tried to follow the book's definition as closely as possible.
-(define (lambda:substitute n x m)
-  (cond ((lambda:atom? m)
-         (if (lambda:same? x m) n m))
-        ((lambda:application? m)
-         (lambda:make-application (lambda:substitute n x (lambda:application-function m))
-                                  (lambda:substitute n x (lambda:application-argument m))))
-        ((lambda:abstraction? m)
-         (let* ((m-bv (lambda:abstraction-binding-variable m))
-                (m-body (lambda:abstraction-body m))
-                (fv-m-body (lambda:free-variables m-body '()))
-                (fv-n (lambda:free-variables n '())))
-           (cond ((lambda:same? x m-bv) m)
+(define (substitute n x m)
+  (cond ((atom? m)
+         (if (identical? x m) n m))
+        ((application? m)
+         (make-application (substitute n x (application-function m))
+                           (substitute n x (application-argument m))))
+        ((abstraction? m)
+         (let* ((m-bv (abstraction-binding-variable m))
+                (m-body (abstraction-body m))
+                (fv-m-body (free-variables m-body))
+                (fv-n (free-variables n)))
+           (cond ((identical? x m-bv) m)
                  ((not (member x fv-m-body)) m)
                  ((not (member m-bv fv-n))
-                  (lambda:make-abstraction m-bv (lambda:substitute n x m-body)))
+                  (make-abstraction m-bv (substitute n x m-body)))
                  (else
-                  (let ((fresh (lambda:make-fresh-symbol m-bv (append fv-m-body fv-n))))
-                    (lambda:make-abstraction
+                  (let ((fresh (make-fresh-atom m-bv (append fv-m-body fv-n))))
+                    (make-abstraction
                      fresh
-                     (lambda:substitute n x (lambda:substitute fresh m-bv m-body))))))))))
+                     (substitute n x (substitute fresh m-bv m-body))))))))))
 
 ;; Returns a symbol whose string is the same as the string of the "desired" symbol,
 ;; but with enough asterisks ("*") appended to it so that it doesn't appear in the "taken" list.
 ;; If desired doesn't appear in taken, then this procedure will simply return desired.
-(define (lambda:make-fresh-symbol desired taken)
+(define (make-fresh-atom desired taken)
   (if (member desired taken)
-      (lambda:make-fresh-symbol (string->symbol (string-append (symbol->string desired) "*"))
-                                taken)
+      (make-fresh-atom (string->symbol (string-append (symbol->string desired) "*"))
+                       taken)
       desired))
 
-(define (lambda:beta-redex? m)
-  (and (lambda:application? m)
-       (lambda:abstraction? (lambda:application-function m))
-       (lambda:term? (lambda:application-argument m))))
+(define (beta-redex? m)
+  (and (application? m)
+       (abstraction? (application-function m))
+       (term? (application-argument m))))
 
-(define (lambda:beta-contract m)
-  (if (lambda:beta-redex? m)
-      (lambda:substitute (lambda:application-argument m)
-                         (lambda:abstraction-binding-variable (lambda:application-function m))
-                         (lambda:abstraction-body (lambda:application-function m)))
+(define (beta-contract m)
+  (if (beta-redex? m)
+      (substitute (application-argument m)
+                  (abstraction-binding-variable (application-function m))
+                  (abstraction-body (application-function m)))
       m))
 
-(define (lambda:beta-normal-form? m)
-  (or (lambda:atom? m)
-      (and (lambda:application? m)
-           (not (lambda:beta-redex? m))
-           (lambda:beta-normal-form? (lambda:application-function m))
-           (lambda:beta-normal-form? (lambda:application-argument m)))
-      (and (lambda:abstraction? m)
-           (lambda:beta-normal-form? (lambda:abstraction-body m)))))
+(define (beta-normal-form? m)
+  (or (atom? m)
+      (and (application? m)
+           (not (beta-redex? m))
+           (beta-normal-form? (application-function m))
+           (beta-normal-form? (application-argument m)))
+      (and (abstraction? m)
+           (beta-normal-form? (abstraction-body m)))))
 
-(define (lambda:reduce-to-bnf m)
-  (cond ((lambda:beta-normal-form? m) m)
-        ((lambda:beta-redex? m)
-         (lambda:reduce-to-bnf (lambda:beta-contract m)))
-        ((lambda:application? m)
-         (lambda:reduce-to-bnf
-          (lambda:make-application (lambda:reduce-to-bnf (lambda:application-function m))
-                                   (lambda:reduce-to-bnf (lambda:application-argument m)))))
-        ((lambda:abstraction? m)
-         (lambda:make-abstraction (lambda:abstraction-binding-variable m)
-                                  (lambda:reduce-to-bnf (lambda:abstraction-body m))))))
+(define (reduce-to-bnf m)
+  (cond ((beta-normal-form? m) m)
+        ((beta-redex? m)
+         (reduce-to-bnf (beta-contract m)))
+        ((application? m)
+         (reduce-to-bnf
+          (make-application (reduce-to-bnf (application-function m))
+                            (reduce-to-bnf (application-argument m)))))
+        ((abstraction? m)
+         (make-abstraction (abstraction-binding-variable m)
+                           (reduce-to-bnf (abstraction-body m))))))
 
 (define ex-1.28-f
   '((((lambda (x)
