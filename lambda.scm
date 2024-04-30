@@ -11,17 +11,17 @@
 
 ;;; Representation of lambda terms
 
-(define (make-atom symbol) (list '<atom> symbol))
-(define (atom? x) (equal? (car x) '<atom>))
+(define (make-atom symbol) (list 'ATOM symbol))
+(define (atom? x) (equal? (car x) 'ATOM))
 (define (atom-symbol x) (cadr x))
 
-(define (make-application function argument) (list '<application> function argument))
-(define (application? x) (equal? (car x) '<application>))
+(define (make-application function argument) (list 'APPLICATION function argument))
+(define (application? x) (equal? (car x) 'APPLICATION))
 (define (application-function x) (cadr x))
 (define (application-argument x) (caddr x))
 
-(define (make-abstraction binding-variable body) (list '<abstraction> binding-variable body))
-(define (abstraction? x) (equal? (car x) '<abstraction>))
+(define (make-abstraction binding-variable body) (list 'ABSTRACTION binding-variable body))
+(define (abstraction? x) (equal? (car x) 'ABSTRACTION))
 (define (abstraction-binding-variable x) (cadr x))
 (define (abstraction-body x) (caddr x))
 
@@ -228,11 +228,43 @@
          (make-abstraction (abstraction-binding-variable m)
                            (reduce-to-bnf (abstraction-body m))))))
 
+;; m is an abstraction.
+;; rename the binding variable in m to x.
+;; requires that x is not a free variable of m
+(define (alpha-convert m x)
+  (if (and (abstraction? m)
+           (not (member x (free-variables m))))
+      (make-abstraction x (substitute x
+                                      (abstraction-binding-variable m)
+                                      (abstraction-body m)))
+      #f))
+
+(define (congruent? m n)
+  (or (and (atom? m)
+           (atom? n)
+           (identical? m n))
+      (and (application? m)
+           (application? n)
+           (congruent? (application-function m) (application-function n))
+           (congruent? (application-argument m) (application-argument n)))
+      (and (abstraction? m)
+           (abstraction? n)
+           (let ((new-n (alpha-convert n (abstraction-binding-variable m))))
+             (and new-n ; did alpha-convert succeed?
+                  (congruent? (abstraction-body m) (abstraction-body new-n)))))))
+                                      
+
 (define ex-1.28-f
   '((lambda (x y z) (x z (y z)))
     ((lambda (x y) (y x)) u)
     ((lambda (x y) (y x)) v)
     w))
 
+(define test
+  '((lambda (x) (y x x))(lambda (x) (y x x))))
 
-  
+(define omega '((lambda (x) (x x))(lambda (x) (x x))))
+
+(define g `(,omega ,ex-1.28-f))
+(define parse parse-term)
+(define unparse unparse-term)
