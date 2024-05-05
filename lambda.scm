@@ -4,26 +4,70 @@
 ;;; 2024-04-25
 ;;; 2024-04-27
 ;;; 2024-04-29
+;;; 2024-05-03
+;;; 2024-05-05
 ;;;
 ;;; Based on the definition of the lambda-calculus in chapter 1 of
 ;;; "Lambda-calculus and combinators: an introduction" by Hindley and Seldin.
 
+;;; In Scheme, an 'and expression will either return #f or the value of the last argument (instead of #t).
+;;; An 'or expression will either return #f or the value of the first non-#f argument (instead of #t).
+;;; This feature is used extensively in the code below to avoid redundant 'if expressions.
+
 
 ;;; Representation of lambda terms
 
-(define (make-atom symbol) (list 'ATOM symbol))
-(define (atom? x) (equal? (car x) 'ATOM))
-(define (atom-symbol x) (cadr x))
 
-(define (make-application function argument) (list 'APPLICATION function argument))
+(define (atom? x) (symbol? x))
+
+(define (make-application function argument)
+  (and function argument (list 'APPLICATION function argument)))
 (define (application? x) (equal? (car x) 'APPLICATION))
 (define (application-function x) (cadr x))
 (define (application-argument x) (caddr x))
 
-(define (make-abstraction binding-variable body) (list 'ABSTRACTION binding-variable body))
+(define (make-abstraction binding-variable body)
+  (and binding-variable body (list 'ABSTRACTION binding-variable body)))
 (define (abstraction? x) (equal? (car x) 'ABSTRACTION))
 (define (abstraction-binding-variable x) (cadr x))
 (define (abstraction-body x) (caddr x))
+
+(define (term? x) (or (atom? x) (application? x) (abstraction? x)))
+
+(define (identical? x y) (equal? x y))
+
+
+;;; Parsing s-expressions into lambda terms
+
+(define (parse-atom x)
+  (and (symbol? x)
+       (not (equal? x 'lambda))
+       x))
+
+(define (parse-application x)
+  (and (list? x)
+       (>= (length x) 2)
+       (not (equal? (car x) 'lambda))
+       (make-nested-applications (parse-term (car x))
+                                 (map-parser parse-term (cdr x)))))
+
+(define (map-parser parser lst)
+  (fold-right (lambda (x y) (and x y (cons x y)))
+              '()
+              (map parser lst)))
+
+(define (parse-abstraction x)
+  (and (list? x)
+       (= (length x) 3)
+       (equal? (car x) 'lambda)
+       (list? (cadr x))
+       (make-nested-abstractions (map-parser parse-atom (cadr x))
+                                 (parse-term (caddr x)))))
+
+(define (parse-term x)
+  (or (parse-atom x)
+      (parse-application x)
+      (parse-abstraction x)))
 
 (define (make-nested-abstractions binding-variables body)
   (if (null? binding-variables)
@@ -32,77 +76,16 @@
                         (make-nested-abstractions (cdr binding-variables) body))))
 
 (define (make-nested-applications function arguments)
-  (if (null? arguments) ; if not actually an application, just a term
+  (if (null? arguments)
       function
-      (make-nested-applications (make-application function
-                                                  (car arguments))
+      (make-nested-applications (make-application function (car arguments))
                                 (cdr arguments))))
-
-(define (term? x)
-  (or (atom? x) (application? x) (abstraction? x)))
-
-(define (identical? x y)
-  (equal? x y))
-
-
-;;; Parsing s-expressions into lambda terms
-
-(define (parse-atom x)
-  (if (and (symbol? x)
-           (not (equal? x 'lambda)))
-      (make-atom x)
-      #f))
-
-(define (parse-application x)
-  (if (and (list? x)
-           (>= (length x) 2))
-      (let ((func (parse-term (car x)))
-            (args (parse-arguments (cdr x))))
-        (if (and func args)
-            (make-nested-applications func args)
-            #f))
-      #f))
-
-(define (parse-arguments x)
-  (if (null? x)
-      '()
-      (let ((arg (parse-term (car x))))
-        (if arg
-            (cons arg (parse-arguments (cdr x)))
-            #f))))
-
-(define (parse-binding-variables x)
-  (if (null? x)
-      '()
-      (let ((var (parse-atom (car x))))
-        (if var ; if parsed successfully
-            (cons var (parse-binding-variables (cdr x)))
-            #f))))
-
-(define (parse-abstraction x)
-  (if (and (list? x)
-           (equal? (length x) 3)
-           (equal? (car x) 'lambda)
-           (list? (cadr x)))
-      (let ((vars (parse-binding-variables (cadr x)))
-            (body (parse-term (caddr x))))
-        (if (and vars body) ; if parses were successful
-            (make-nested-abstractions vars body)
-            #f))
-      #f))
-          
-
-(define (parse-term x)
-  ;; "or" returns the first non-false value
-  (or (parse-atom x)
-      (parse-application x)
-      (parse-abstraction x)))
 
 
 ;;; Unparsing lambda terms into s-expressions
 
 (define (unparse-term x)
-  (cond ((atom? x) (atom-symbol x))
+  (cond ((atom? x) x)
         ((application? x)
          (list (unparse-term (application-function x))
                (unparse-term (application-argument x))))
@@ -110,8 +93,6 @@
          (list 'lambda
                (list (unparse-term (abstraction-binding-variable x)))
                (unparse-term (abstraction-body x))))))
-
-
 
 
 (define (num-atoms x)
@@ -217,13 +198,12 @@
            (beta-normal-form? (abstraction-body m)))))
 
 (define (reduce-to-bnf m)
-  (cond ((beta-normal-form? m) m)
+  (cond ((atom? m) m)
         ((beta-redex? m)
          (reduce-to-bnf (beta-contract m)))
         ((application? m)
-         (reduce-to-bnf
-          (make-application (reduce-to-bnf (application-function m))
-                            (reduce-to-bnf (application-argument m)))))
+         (make-application (reduce-to-bnf (application-function m))
+                           (reduce-to-bnf (application-argument m))))
         ((abstraction? m)
          (make-abstraction (abstraction-binding-variable m)
                            (reduce-to-bnf (abstraction-body m))))))
@@ -232,12 +212,11 @@
 ;; rename the binding variable in m to x.
 ;; requires that x is not a free variable of m
 (define (alpha-convert m x)
-  (if (and (abstraction? m)
-           (not (member x (free-variables m))))
-      (make-abstraction x (substitute x
-                                      (abstraction-binding-variable m)
-                                      (abstraction-body m)))
-      #f))
+  (and (abstraction? m)
+       (not (member x (free-variables m)))
+       (make-abstraction x (substitute x
+                                       (abstraction-binding-variable m)
+                                       (abstraction-body m)))))
 
 (define (congruent? m n)
   (or (and (atom? m)
@@ -250,7 +229,7 @@
       (and (abstraction? m)
            (abstraction? n)
            (let ((new-n (alpha-convert n (abstraction-binding-variable m))))
-             (and new-n ; did alpha-convert succeed?
+             (and new-n
                   (congruent? (abstraction-body m) (abstraction-body new-n)))))))
                                       
 
@@ -268,3 +247,5 @@
 (define g `(,omega ,ex-1.28-f))
 (define parse parse-term)
 (define unparse unparse-term)
+
+      
