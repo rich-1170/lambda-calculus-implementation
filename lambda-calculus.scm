@@ -1,11 +1,8 @@
-;;; Lambda-calculus impelmentation
+;;; An implementation of the lambda-calculus
 ;;;
 ;;; Richard Bachmann
 ;;; 2024-04-25
-;;; 2024-04-27
-;;; 2024-04-29
-;;; 2024-05-03
-;;; 2024-05-05
+;;; 2024-05-06
 ;;;
 ;;; Based on the definition of the lambda-calculus in chapter 1 of
 ;;; "Lambda-calculus and combinators: an introduction" by Hindley and Seldin.
@@ -15,8 +12,9 @@
 ;;; This feature is used extensively in the code below to avoid redundant 'if expressions.
 
 
-;;; Representation of lambda terms
+(import (srfi 1)) ; fold-right
 
+;;; Representation of lambda terms
 
 (define (atom? x) (symbol? x))
 
@@ -81,6 +79,7 @@
       (make-nested-applications (make-application function (car arguments))
                                 (cdr arguments))))
 
+(define parse parse-term)
 
 ;;; Unparsing lambda terms into s-expressions
 
@@ -93,6 +92,8 @@
          (list 'lambda
                (list (unparse-term (abstraction-binding-variable x)))
                (unparse-term (abstraction-body x))))))
+
+(define unparse unparse-term)
 
 
 (define (num-atoms x)
@@ -167,9 +168,10 @@
                      fresh
                      (substitute n x (substitute fresh m-bv m-body))))))))))
 
-;; Returns a symbol whose string is the same as the string of the "desired" symbol,
-;; but with enough asterisks ("*") appended to it so that it doesn't appear in the "taken" list.
-;; If desired doesn't appear in taken, then this procedure will simply return desired.
+;; Returns a symbol guaranteed not to appear in the _taken_ list.
+;; The symbol's string will be that of _desired_,
+;; but with asterisks ("*") appended to it.
+;; If _desired_ doesn't appear in _taken_, this procedure simply returns _desired_.
 (define (make-fresh-atom desired taken)
   (if (member desired taken)
       (make-fresh-atom (string->symbol (string-append (symbol->string desired) "*"))
@@ -231,7 +233,7 @@
            (let ((new-n (alpha-convert n (abstraction-binding-variable m))))
              (and new-n
                   (congruent? (abstraction-body m) (abstraction-body new-n)))))))
-                                      
+
 
 (define ex-1.28-f
   '((lambda (x y z) (x z (y z)))
@@ -245,7 +247,5 @@
 (define omega '((lambda (x) (x x))(lambda (x) (x x))))
 
 (define g `(,omega ,ex-1.28-f))
-(define parse parse-term)
-(define unparse unparse-term)
 
-      
+
